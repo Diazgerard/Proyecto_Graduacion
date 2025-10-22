@@ -96,8 +96,7 @@ class FBRAPIClient:
 
         # Return leagues if successfully fetched
         return leagues if 'leagues' in locals() else None
-    
-
+  
     # API para obtener los id de los todos los equipos durante 2017-2024
     def get_team_ids(self, season_id: str) -> Optional[List[int]]:
 
@@ -202,7 +201,6 @@ class FBRAPIClient:
 
         return all_teams_data
     
-
     def get_match_ids(self, season_id: str, team_id: str) -> Optional[List[int]]:
         try:
             # Agregar delay para evitar rate limiting
@@ -387,8 +385,6 @@ class FBRAPIClient:
         
         return all_matches_data
     
-
-
     def team_stats_per_season(self, season_id: str) -> Optional[List[Dict]]:
         try:
             url = f"{self.base_url}/team-season-stats?league_id={self.league_id}&season_id={season_id}"
@@ -473,16 +469,16 @@ class FBRAPIClient:
                                 'pk_saved': keepers.get('pk_saved'),
                             })
                         
-                        # Extraser estadisticas de tiros
+                        # Extraer estadisticas de tiros
                         if 'stats' in team and 'shooting' in team['stats']:
-                            shoting = team['stats']['shooting']
+                            shooting = team['stats']['shooting']
                             team_complete_data.update({
-                                'ttl_sho': shoting.get('ttl_shot'),
-                                'ttl_sot': shoting.get('ttl_sot'),
-                                'pct_sot': shoting.get('pct_sot'),
-                                'avg_sho': shoting.get('avg_shot'),
-                                'gls_per_sot': shoting.get('gls_per_sot'),
-                                'ttl_gls_xg_diff': shoting.get('ttl_gls_xg_diff'),
+                                'ttl_sho': shooting.get('ttl_sh'),
+                                'ttl_sot': shooting.get('ttl_sot'),
+                                'pct_sot': shooting.get('pct_sot'),
+                                'avg_sho': shooting.get('avg_sh'),
+                                'gls_per_sot': shooting.get('gls_per_sot'),
+                                'ttl_gls_xg_diff': shooting.get('ttl_gls_xg_diff'),
                             })
 
                         # Extraer estadisticas de pases
@@ -545,7 +541,7 @@ class FBRAPIClient:
                             })
 
                         # Extraer estidisticas de playtime
-                        if 'stats' in team and 'playtime' in team['stats']:
+                        if 'stats' in team and 'playingtime' in team['stats']:
                             playtime = team['stats']['playingtime']
                             team_complete_data.update({
                                 'avg_age': playtime.get('avg_age'),
@@ -587,7 +583,6 @@ class FBRAPIClient:
             print(f"Error inesperado: {e}")
             return None
     
-
     def multiple_team_season_stats(self) -> List[Dict]:
         target_seasons = [
             '2017-2018', '2018-2019', '2019-2020', 
@@ -634,8 +629,406 @@ class FBRAPIClient:
         print(f"Total de registros de estadísticas obtenidos: {len(all_team_stats_data)}")
         
         return all_team_stats_data
-        
+    
+    def _safe_int(self, value, default=0):
+        """Convierte un valor a entero de forma segura"""
+        if value is None:
+            return default
+        try:
+            return int(float(value))  # Convertir a float primero para manejar strings como "1.0"
+        except (ValueError, TypeError):
+            return default
+    
+    def _safe_float(self, value, default=0.0):
+        """Convierte un valor a float de forma segura"""
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
 
+    def get_team_stats_per_match(self, match_id: str, season_id: str) -> Optional[Dict]:
+        try:
+            url = f"{self.base_url}/all-players-match-stats?match_id={match_id}"
+            print(f"Haciendo request a: {url}")
+
+            headers = {
+                'x-api-key': self.api_key,
+                'Accept': 'application/json'
+            }
+
+            payload = {}
+
+            response = self.session.get(url, headers=headers, data=payload, timeout=30)
+
+            print(f"Response Status Code: {response.status_code}")
+
+            if response.status_code in [200, 201]:
+                try:
+                    data = response.json()
+                    
+                    # Los datos vienen en el campo 'data'
+                    if isinstance(data, dict) and 'data' in data:
+                        teams_data = data['data']
+                    elif isinstance(data, list):
+                        teams_data = data
+                    else:
+                        print("Formato de datos inesperado en la respuesta JSON")
+                        return None
+
+                    # Diccionario para almacenar stats agregadas por equipo
+                    match_stats = {
+                        'match_id': match_id,
+                        'season_id': season_id,
+                        'home_team': {},
+                        'away_team': {}
+                    }
+
+                    # Procesar cada equipo
+                    for team in teams_data:
+                        team_name = team.get('team_name')
+                        home_away = team.get('home_away')  # 'home' o 'away'
+                        players = team.get('players', [])
+                        
+                        # Inicializar estadísticas del equipo
+                        team_stats = {
+                            'team_name': team_name,
+                            'home_away': home_away,
+                            # Estadísticas sumadas de todos los jugadores
+                            # General
+
+                            'ttl_gls': 0,
+                            'ttl_ast': 0,
+                            'ttl_xg': 0.0,
+                            'ttl_xag': 0.0, #total de expected goals del rival
+                            'ttl_pk_made': 0,
+                            'ttl_pk_att': 0,
+                            'ttl_yellow_cards': 0,
+                            'ttl_red_cards': 0,
+                            'ttl_avg_gls': 0.0, #Calcular
+                            'ttl_avg_ast': 0.0, # Calcular
+                            'ttl_gls_ag': 0.0, # Extraer de keepers
+                            'ttl_avg_xag': 0.0, # Extraer el dato del rival
+                            'ttl_avg_gols_ag': 0.0, # Extraer el dato del rival
+                            'ttl_sot_ag': 0, # Extraer de keepers
+
+                            #Keeper
+                            'ttl_saves': 0, # Extraer de keepers
+                            'clean_sheets': 0, # Si son el "ttl_gls_ag" es 0 esto deberia de ir 1
+                            'ttl_pk_att_ag': 0, # Extraer el datos del rival
+                            'ttl_pk_saved': 0, # Extraer el dato del rival
+
+                            #shooting
+                            'ttl_sh': 0,
+                            'ttl_sot': 0,
+                            'pct_sot': 0.0, # Calcular
+                            'ttl_avg_sh': 0.0, # Calcular
+                            'ttl_gls_per_sot': 0.0, # Calcular
+                            'ttl_gls_xg_diff': 0.0, # Calcular
+
+                            #passing
+                            'ttl_pass_cmp': 0,
+                            'ttl_pass_att': 0,
+                            'pct_pass_cmp': 0.0, # Calcular
+                            'ttl_pass_prog': 0,
+                            'ttl_key_passes': 0,
+                            'ttl_pass_opp_box': 0,
+                            'ttl_cross_opp_box': 0,
+
+                            #passing_types
+                            'ttl_pass_live': 0,
+                            'ttl_pass_dead': 0,
+                            'ttl_pass_fk': 0,
+                            'ttl_through_balls': 0,
+                            'ttl_switches': 0,
+                            'ttl_crosses': 0,
+                            'ttl_pass_offside': 0,
+                            'ttl_pass_blocked': 0,
+                            'ttl_throw_ins': 0,
+                            'ttl_ck': 0,
+
+                            #defense
+                            'ttl_tkl': 0,
+                            'ttl_tkl_won': 0,
+                            'ttl_tkl_drb': 0,
+                            'ttl_tkl_drb_att': 0,
+                            'pct_tkl_drb_suc': 0.0,
+                            'ttl_blocks': 0,
+                            'ttl_sh_blocked': 0,
+                            'ttl_int': 0,
+                            'ttl_clearances': 0,
+                            'ttl_def_error': 0,
+
+                            #possession
+                            'avg_poss': 0.0, # No disponible en datos por jugador - se mantiene en 0.0
+                            'ttl_touches': 0,
+                            'ttl_take_on_att': 0,
+                            'ttl_take_on_suc': 0,
+                            'ttl_carries': 0,
+                            'ttl_carries_miscontrolled': 0,
+                            'ttl_carries_dispossessed': 0,
+                            'ttl_pass_rcvd': 0,
+                            'ttl_pass_prog_rcvd': 0,
+
+                            #misc
+                            'ttl_fls_ag': 0,
+                            'ttl_fls_for': 0,
+                            'ttl_offside': 0,
+                            'ttl_og': 0,
+                            'ttl_ball_recov': 0,
+                            'ttl_air_dual_won': 0,
+                            'ttl_air_dual_lost': 0,
+
+
+                            'players_count': len(players)
+                        }
+                        
+                        # Sumar estadísticas de todos los jugadores del equipo
+                        for player in players:
+                            # Extraer todas las estadísticas primero
+                            player_stats = player.get('stats', {}).get('summary', {})
+                            passing_stats = player.get('stats', {}).get('passing', {})
+                            passing_types_stats = player.get('stats', {}).get('passing_types', {})
+                            defense_stats = player.get('stats', {}).get('defense', {})
+                            possession_stats = player.get('stats', {}).get('possession', {})
+                            misc_stats = player.get('stats', {}).get('misc', {})
+                            
+                            # Extraer estadísticas generales de jugadores (summary)
+                            team_stats['ttl_gls'] += self._safe_int(player_stats.get('gls'))
+                            team_stats['ttl_ast'] += self._safe_int(player_stats.get('ast'))
+                            team_stats['ttl_xg'] += self._safe_float(player_stats.get('xg'))
+                            team_stats['ttl_xag'] += self._safe_float(player_stats.get('xag'))
+                            team_stats['ttl_pk_made'] += self._safe_int(player_stats.get('pk_made'))
+                            team_stats['ttl_pk_att'] += self._safe_int(player_stats.get('pk_att'))
+                            team_stats['ttl_yellow_cards'] += self._safe_int(player_stats.get('yellow_cards'))
+                            team_stats['ttl_red_cards'] += self._safe_int(player_stats.get('red_cards'))
+
+                            # Estadísticas de tiros (summary)
+                            team_stats['ttl_sh'] += self._safe_int(player_stats.get('sh'))
+                            team_stats['ttl_sot'] += self._safe_int(player_stats.get('sot'))
+
+                            # Estadísticas básicas de pase (summary)
+                            team_stats['ttl_pass_cmp'] += self._safe_int(player_stats.get('pass_cmp'))
+                            team_stats['ttl_pass_att'] += self._safe_int(player_stats.get('pass_att'))
+                            team_stats['ttl_pass_prog'] += self._safe_int(player_stats.get('pass_prog'))
+
+                            # Estadísticas básicas de defensa (summary)
+                            team_stats['ttl_tkl'] += self._safe_int(player_stats.get('tkl'))
+                            team_stats['ttl_blocks'] += self._safe_int(player_stats.get('blocks'))
+                            team_stats['ttl_int'] += self._safe_int(player_stats.get('int'))
+                            
+                            # Estadísticas básicas de posesión (summary)
+                            team_stats['ttl_touches'] += self._safe_int(player_stats.get('touches'))
+                            team_stats['ttl_take_on_att'] += self._safe_int(player_stats.get('take_on_att'))
+                            team_stats['ttl_take_on_suc'] += self._safe_int(player_stats.get('take_on_suc'))
+                            team_stats['ttl_carries'] += self._safe_int(player_stats.get('carries'))
+
+                            # Estadísticas detalladas de passing
+                            team_stats['ttl_key_passes'] += self._safe_int(passing_stats.get('key_passes'))
+                            team_stats['ttl_pass_opp_box'] += self._safe_int(passing_stats.get('pass_opp_box'))
+                            team_stats['ttl_cross_opp_box'] += self._safe_int(passing_stats.get('cross_opp_box'))
+
+                            # Estadísticas de passing_types
+                            team_stats['ttl_pass_live'] += self._safe_int(passing_types_stats.get('pass_live'))
+                            team_stats['ttl_pass_dead'] += self._safe_int(passing_types_stats.get('pass_dead'))
+                            team_stats['ttl_pass_fk'] += self._safe_int(passing_types_stats.get('pass_fk'))
+                            team_stats['ttl_through_balls'] += self._safe_int(passing_types_stats.get('through_balls'))
+                            team_stats['ttl_switches'] += self._safe_int(passing_types_stats.get('switches'))
+                            team_stats['ttl_crosses'] += self._safe_int(passing_types_stats.get('crosses'))
+                            team_stats['ttl_pass_offside'] += self._safe_int(passing_types_stats.get('pass_offside'))
+                            team_stats['ttl_pass_blocked'] += self._safe_int(passing_types_stats.get('pass_blocked'))
+                            team_stats['ttl_throw_ins'] += self._safe_int(passing_types_stats.get('throw_ins'))
+                            team_stats['ttl_ck'] += self._safe_int(passing_types_stats.get('ck'))
+
+                            # Estadísticas detalladas de defense
+                            team_stats['ttl_tkl_won'] += self._safe_int(defense_stats.get('tkl_won'))
+                            team_stats['ttl_tkl_drb'] += self._safe_int(defense_stats.get('tkl_drb'))
+                            team_stats['ttl_tkl_drb_att'] += self._safe_int(defense_stats.get('tkl_drb_att'))
+                            team_stats['ttl_sh_blocked'] += self._safe_int(defense_stats.get('sh_blocked'))
+                            team_stats['ttl_clearances'] += self._safe_int(defense_stats.get('clearances'))
+                            team_stats['ttl_def_error'] += self._safe_int(defense_stats.get('def_error'))
+
+                            # Estadísticas detalladas de possession
+                            team_stats['ttl_carries_miscontrolled'] += self._safe_int(possession_stats.get('carries_miscontrolled'))
+                            team_stats['ttl_carries_dispossessed'] += self._safe_int(possession_stats.get('carries_dispossessed'))
+                            team_stats['ttl_pass_rcvd'] += self._safe_int(possession_stats.get('pass_rcvd'))
+                            team_stats['ttl_pass_prog_rcvd'] += self._safe_int(possession_stats.get('pass_prog_rcvd'))
+
+                            # Estadísticas de misc
+                            team_stats['ttl_fls_ag'] += self._safe_int(misc_stats.get('fls_com'))
+                            team_stats['ttl_fls_for'] += self._safe_int(misc_stats.get('fls_drawn'))
+                            team_stats['ttl_offside'] += self._safe_int(misc_stats.get('offside'))
+                            team_stats['ttl_og'] += self._safe_int(misc_stats.get('og'))
+                            team_stats['ttl_ball_recov'] += self._safe_int(misc_stats.get('ball_recov'))
+                            team_stats['ttl_air_dual_won'] += self._safe_int(misc_stats.get('air_dual_won'))
+                            team_stats['ttl_air_dual_lost'] += self._safe_int(misc_stats.get('air_dual_lost'))
+
+                        # Extraer estadísticas de keepers (porteros) - estructura directa
+                        keepers = team.get('keepers', [])
+                        for keeper in keepers:
+                            # Los datos de keepers están directamente en el nivel superior
+                            team_stats['ttl_saves'] += self._safe_int(keeper.get('saves'))
+                            team_stats['ttl_sot_ag'] += self._safe_int(keeper.get('sot_ag'))
+                            team_stats['ttl_gls_ag'] += self._safe_int(keeper.get('gls_ag'))
+
+                        # Calcular estadísticas derivadas
+                        players_count = team_stats['players_count']
+                        
+                        # Calcular promedios
+                        if players_count > 0:
+                            team_stats['ttl_avg_gls'] = round(team_stats['ttl_gls'] / players_count, 2)
+                            team_stats['ttl_avg_ast'] = round(team_stats['ttl_ast'] / players_count, 2)
+                            team_stats['ttl_avg_sh'] = round(team_stats['ttl_sh'] / players_count, 2)
+                            team_stats['ttl_avg_xag'] = round(team_stats['ttl_xag'] / players_count, 2)
+                        
+                        # Calcular porcentajes
+                        if team_stats['ttl_pass_att'] > 0:
+                            team_stats['pct_pass_cmp'] = round((team_stats['ttl_pass_cmp'] / team_stats['ttl_pass_att']) * 100, 1)
+                        
+                        if team_stats['ttl_sh'] > 0:
+                            team_stats['pct_sot'] = round((team_stats['ttl_sot'] / team_stats['ttl_sh']) * 100, 1)
+                            team_stats['ttl_gls_per_sot'] = round(team_stats['ttl_gls'] / team_stats['ttl_sot'], 2) if team_stats['ttl_sot'] > 0 else 0.0
+                        
+                        if team_stats['ttl_tkl_drb_att'] > 0:
+                            team_stats['pct_tkl_drb_suc'] = round((team_stats['ttl_tkl_drb'] / team_stats['ttl_tkl_drb_att']) * 100, 1)
+                        
+                        # Calcular diferencia xG vs goles reales
+                        team_stats['ttl_gls_xg_diff'] = round(team_stats['ttl_gls'] - team_stats['ttl_xg'], 2)
+                        
+                        # Determinar clean sheet (portería a cero)
+                        team_stats['clean_sheets'] = 1 if team_stats['ttl_gls_ag'] == 0 else 0
+                        
+                        # Calcular promedio de goles en contra (para porteros)
+                        team_stats['ttl_avg_gols_ag'] = round(team_stats['ttl_gls_ag'], 2)
+                        
+                        
+                        
+                        # Asignar estadísticas al equipo correspondiente
+                        if home_away == 'home':
+                            match_stats['home_team'] = team_stats
+                        elif home_away == 'away':
+                            match_stats['away_team'] = team_stats
+                    
+                    # Actualizar estadísticas que dependen del equipo rival
+                    if 'home_team' in match_stats and 'away_team' in match_stats:
+                        # Para el equipo local: los goles en contra vienen del rival (away)
+                        if match_stats['away_team']:
+                            match_stats['home_team']['ttl_gls_ag'] = match_stats['away_team']['ttl_gls']
+                            match_stats['home_team']['ttl_pk_att_ag'] = match_stats['away_team']['ttl_pk_att']
+                            match_stats['home_team']['ttl_sot_ag'] = match_stats['away_team']['ttl_sot']
+                            # Recalcular clean sheet
+                            match_stats['home_team']['clean_sheets'] = 1 if match_stats['home_team']['ttl_gls_ag'] == 0 else 0
+                        
+                        # Para el equipo visitante: los goles en contra vienen del rival (home)
+                        if match_stats['home_team']:
+                            match_stats['away_team']['ttl_gls_ag'] = match_stats['home_team']['ttl_gls']
+                            match_stats['away_team']['ttl_pk_att_ag'] = match_stats['home_team']['ttl_pk_att']
+                            match_stats['away_team']['ttl_sot_ag'] = match_stats['home_team']['ttl_sot']
+                            # Recalcular clean sheet
+                            match_stats['away_team']['clean_sheets'] = 1 if match_stats['away_team']['ttl_gls_ag'] == 0 else 0
+                    
+                    return match_stats
+                
+                except json.JSONDecodeError as e:
+                    print(f"Error parseando JSON: {e}")
+                    print(f"Respuesta: {response.text}")
+                    return None
+            else:
+                print(f"Error en la API: {response.status_code}")
+                print(f"Contenido del error: {response.text}")
+                return None
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error de conexión: {e}")
+            return None
+        except Exception as e:
+            print(f"Error inesperado: {e}")
+            return None
+
+    def process_all_seasons_matches(self, db_manager) -> List[Dict]:
+        """
+        Procesa todas las temporadas, obtiene los matches registrados de la BD 
+        y llama a get_team_stats_per_match para cada uno
+        """
+        target_seasons = [
+            '2017-2018', '2018-2019', '2019-2020', 
+            '2020-2021', '2021-2022', '2022-2023', 
+            '2023-2024', '2024-2025'
+        ]
+        
+        all_match_stats = []
+        total_matches_processed = 0
+        
+        print("=== INICIANDO PROCESAMIENTO DE ESTADÍSTICAS POR MATCH ===")
+        
+        for season_idx, season in enumerate(target_seasons):
+            print(f"\n--- Procesando temporada {season} ({season_idx + 1}/{len(target_seasons)}) ---")
+            
+            # Obtener matches registrados para esta temporada
+            registered_matches = db_manager.get_registered_matches(season)
+            
+            if not registered_matches:
+                print(f"No hay matches registrados para la temporada {season}")
+                continue
+            
+            season_matches_processed = 0
+            
+            # Procesar cada match registrado
+            for match_idx, match_info in enumerate(registered_matches):
+                match_id = match_info['match_id']
+                season_id = match_info['season_id']
+                
+                print(f"  Procesando match {match_idx + 1}/{len(registered_matches)}: {match_id}")
+                
+                try:
+                    # Llamar a get_team_stats_per_match
+                    match_stats = self.get_team_stats_per_match(match_id, season_id)
+                    
+                    if match_stats:
+                        # Obtener team_id si no están presentes en los datos de la API
+                        home_team_name = match_stats.get('home_team', {}).get('team_name')
+                        away_team_name = match_stats.get('away_team', {}).get('team_name')
+                        
+                        # Verificar si necesitamos obtener team_id de la BD
+                        if home_team_name and not match_stats.get('home_team', {}).get('team_id'):
+                            home_team_id = db_manager.get_team_id_by_name(home_team_name)
+                            if home_team_id:
+                                match_stats['home_team']['team_id'] = home_team_id
+                        
+                        if away_team_name and not match_stats.get('away_team', {}).get('team_id'):
+                            away_team_id = db_manager.get_team_id_by_name(away_team_name)
+                            if away_team_id:
+                                match_stats['away_team']['team_id'] = away_team_id
+                        
+                        all_match_stats.append(match_stats)
+                        season_matches_processed += 1
+                        total_matches_processed += 1
+                        print(f"    ✓ Estadísticas obtenidas correctamente")
+                    else:
+                        print(f"    ✗ No se pudieron obtener estadísticas")
+                    
+                    # Pausa entre requests para evitar rate limiting
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    print(f"    ✗ Error procesando match {match_id}: {e}")
+                    continue
+            
+            print(f"Temporada {season} completada: {season_matches_processed}/{len(registered_matches)} matches procesados")
+            
+            # Pausa más larga entre temporadas
+            if season_idx < len(target_seasons) - 1:
+                print("Pausa entre temporadas...")
+                time.sleep(3)
+        
+        print(f"\n=== PROCESAMIENTO COMPLETADO ===")
+        print(f"Total de matches procesados: {total_matches_processed}")
+        print(f"Total de estadísticas de matches obtenidas: {len(all_match_stats)}")
+        
+        return all_match_stats
+
+    #Falta un metodo mas
 
 ###################################################################################
 
@@ -738,7 +1131,6 @@ class DatabaseManager:
             print(f"Error inesperado: {e}")
             return 0
         
-    
     def insert_teams_data(self, teams_data: List[Dict]) -> int:
         try:
             inserted_count = 0
@@ -774,7 +1166,6 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error inesperado: {e}")
             return 0
-
   
     def insert_matches_data(self, matches_data: List[Dict]) -> int:
         try:
@@ -870,7 +1261,34 @@ class DatabaseManager:
             print(f"Error obteniendo nombre del equipo {team_id}: {e}")
             return f"Team_{team_id}"
     
-
+    def get_team_id_by_name(self, team_name: str) -> Optional[str]:
+        """Obtiene el team_id desde la base de datos usando el nombre del equipo"""
+        try:
+            if self.cursor:
+                # Buscar coincidencia exacta primero
+                query = "SELECT team_id FROM team_meta WHERE team_name = %s"
+                self.cursor.execute(query, (team_name,))
+                result = self.cursor.fetchone()
+                
+                if result:
+                    return str(result[0])
+                
+                # Si no hay coincidencia exacta, buscar similar (ILIKE para ignorar mayúsculas)
+                query = "SELECT team_id FROM team_meta WHERE team_name ILIKE %s"
+                self.cursor.execute(query, (f"%{team_name}%",))
+                result = self.cursor.fetchone()
+                
+                if result:
+                    print(f"Encontrado team_id por coincidencia parcial: {team_name}")
+                    return str(result[0])
+                
+                print(f"No se encontró team_id para: {team_name}")
+                return None
+            return None
+        except Exception as e:
+            print(f"Error obteniendo team_id: {e}")
+            return None
+    
     def insert_team_stats_data(self, team_stats_data: List[Dict]) -> int:
         try:
             inserted_count = 0
@@ -934,7 +1352,7 @@ class DatabaseManager:
                 ttl_pass_offsides = team_stat.get('ttl_pass_offside')
                 ttl_pass_blocked = team_stat.get('ttl_pass_blocked')
                 ttl_throw_ins = team_stat.get('ttl_throw_ins')
-                ttl_cks = team_stat.get('ttl_cks')
+                ttl_ck = team_stat.get('ttl_ck')
                 
                 # Estadísticas defensivas
                 ttl_tkl = team_stat.get('ttl_tkl')
@@ -982,7 +1400,7 @@ class DatabaseManager:
                 ttl_sho, ttl_sot, pct_sot, avg_sho, gls_per_sot, ttl_gls_xg_diff,
                 ttl_pass_cmp, pct_pass_cmp, ttl_pass_prog, ttl_key_passes, ttl_pass_opp_box, ttl_cross_opp_box,
                 ttl_pass_live, ttl_pass_dead, ttl_pass_fk, ttl_through_balls, ttl_switches, ttl_crosses,
-                ttl_pass_offsides, ttl_pass_blocked, ttl_throw_ins, ttl_cks,
+                ttl_pass_offsides, ttl_pass_blocked, ttl_throw_ins, ttl_ck,
                 ttl_tkl, ttl_tkl_won, ttl_tkl_drb, ttl_tkl_drb_att, pct_tkl_drb_suc, ttl_blocks,
                 ttl_sh_blocked, ttl_int, ttl_clearances, ttl_def_error,
                 avg_poss, ttl_touches, ttl_take_on_att, ttl_take_on_suc, ttl_carries,
@@ -1036,7 +1454,7 @@ class DatabaseManager:
                     ttl_pass_offsides = EXCLUDED.ttl_pass_offsides,
                     ttl_pass_blocked = EXCLUDED.ttl_pass_blocked,
                     ttl_throw_ins = EXCLUDED.ttl_throw_ins,
-                    ttl_cks = EXCLUDED.ttl_cks,
+                    ttl_ck = EXCLUDED.ttl_ck,
                     ttl_tkl = EXCLUDED.ttl_tkl,
                     ttl_tkl_won = EXCLUDED.ttl_tkl_won,
                     ttl_tkl_drb = EXCLUDED.ttl_tkl_drb,
@@ -1067,7 +1485,7 @@ class DatabaseManager:
                     ttl_air_dual_lost = EXCLUDED.ttl_air_dual_lost;
                 """
                 
-                # Crear tupla con exactamente 72 valores (sin duplicar values)
+                # Crear tupla con exactamente 76 valores
                 values = (
                     season_id, team_id, team_name, matches_played, ttl_gls, ttl_ast, ttl_non_pen_gls,
                     ttl_xg, ttl_xag, ttl_pk_made, ttl_pk_att, ttl_yellow_cards, ttl_red_cards,
@@ -1076,7 +1494,7 @@ class DatabaseManager:
                     ttl_sho, ttl_sot, pct_sot, avg_sho, gls_per_sot, ttl_gls_xg_diff,
                     ttl_pass_cmp, pct_pass_cmp, ttl_pass_prog, ttl_key_passes, ttl_pass_opp_box, ttl_cross_opp_box,
                     ttl_pass_live, ttl_pass_dead, ttl_pass_fk, ttl_through_balls, ttl_switches, ttl_crosses,
-                    ttl_pass_offsides, ttl_pass_blocked, ttl_throw_ins, ttl_cks,
+                    ttl_pass_offsides, ttl_pass_blocked, ttl_throw_ins, ttl_ck,
                     ttl_tkl, ttl_tkl_won, ttl_tkl_drb, ttl_tkl_drb_att, pct_tkl_drb_suc, ttl_blocks,
                     ttl_sh_blocked, ttl_int, ttl_clearances, ttl_def_error,
                     avg_poss, ttl_touches, ttl_take_on_att, ttl_take_on_suc, ttl_carries,
@@ -1113,6 +1531,257 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error inesperado: {e}")
             return 0
+
+    def get_registered_matches(self, season_id: str) -> List[Dict]:
+        """Obtiene todos los matches registrados para una temporada específica"""
+        try:
+            query = """
+                SELECT id, season_id, match_id 
+                FROM matches_registered 
+                WHERE season_id = %s
+                ORDER BY id
+            """
+            
+            if self.cursor:
+                self.cursor.execute(query, (season_id,))
+                results = self.cursor.fetchall()
+                
+                # Convertir a lista de diccionarios
+                matches = []
+                for row in results:
+                    matches.append({
+                        'id': row[0],
+                        'season_id': row[1],
+                        'match_id': row[2]
+                    })
+                
+                print(f"Se encontraron {len(matches)} matches para la temporada {season_id}")
+                return matches
+            else:
+                print("No hay conexión a la base de datos")
+                return []
+                
+        except psycopg2.Error as e:
+            print(f"Error consultando matches registrados: {e}")
+            return []
+        except Exception as e:
+            print(f"Error inesperado consultando matches: {e}")
+            return []
+
+    def insert_team_match_stats(self, match_stats_list: List[Dict]) -> int:
+        """Inserta estadísticas de equipos por match en la base de datos"""
+        try:
+            inserted_count = 0
+            
+            # Query de inserción con ON CONFLICT para evitar duplicados
+            insert_query = """
+                INSERT INTO team_match_stats (
+                    match_id, season_id, team_id, team_name, home_away,
+                    ttl_gls, ttl_ast, ttl_xg, ttl_xag, ttl_pk_made, ttl_pk_att, 
+                    ttl_yellow_cards, ttl_red_cards, ttl_gls_ag, ttl_sot_ag, ttl_saves, 
+                    clean_sheets, ttl_pk_att_ag, ttl_pk_saved, ttl_sh, ttl_sot, pct_sot, 
+                    ttl_avg_sh, ttl_gls_per_sot, ttl_gls_xg_diff, ttl_pass_cmp, ttl_pass_att, 
+                    pct_pass_cmp, ttl_pass_prog, ttl_key_passes, ttl_pass_opp_box, 
+                    ttl_cross_opp_box, ttl_pass_live, ttl_pass_dead, ttl_pass_fk, 
+                    ttl_through_balls, ttl_switches, ttl_crosses, ttl_pass_offside, 
+                    ttl_pass_blocked, ttl_throw_ins, ttl_ck, ttl_tkl, ttl_tkl_won, 
+                    ttl_tkl_drb, ttl_tkl_drb_att, pct_tkl_drb_suc, ttl_blocks, 
+                    ttl_sh_blocked, ttl_int, ttl_clearances, ttl_def_error, avg_poss, 
+                    ttl_touches, ttl_take_on_att, ttl_take_on_suc, ttl_carries, 
+                    ttl_carries_miscontrolled, ttl_carries_dispossessed, ttl_pass_rcvd, 
+                    ttl_pass_prog_rcvd, ttl_fls_ag, ttl_fls_for, ttl_offside, ttl_og, 
+                    ttl_ball_recov, ttl_air_dual_won, ttl_air_dual_lost, players_count
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                ) ON CONFLICT (match_id, team_id) DO UPDATE SET
+                    team_name = EXCLUDED.team_name,
+                    home_away = EXCLUDED.home_away,
+                    ttl_gls = EXCLUDED.ttl_gls,
+                    ttl_ast = EXCLUDED.ttl_ast,
+                    ttl_xg = EXCLUDED.ttl_xg,
+                    ttl_xag = EXCLUDED.ttl_xag,
+                    ttl_pk_made = EXCLUDED.ttl_pk_made,
+                    ttl_pk_att = EXCLUDED.ttl_pk_att,
+                    ttl_yellow_cards = EXCLUDED.ttl_yellow_cards,
+                    ttl_red_cards = EXCLUDED.ttl_red_cards,
+                    ttl_gls_ag = EXCLUDED.ttl_gls_ag,
+                    ttl_sot_ag = EXCLUDED.ttl_sot_ag,
+                    ttl_saves = EXCLUDED.ttl_saves,
+                    clean_sheets = EXCLUDED.clean_sheets,
+                    ttl_pk_att_ag = EXCLUDED.ttl_pk_att_ag,
+                    ttl_pk_saved = EXCLUDED.ttl_pk_saved,
+                    ttl_sh = EXCLUDED.ttl_sh,
+                    ttl_sot = EXCLUDED.ttl_sot,
+                    pct_sot = EXCLUDED.pct_sot,
+                    ttl_avg_sh = EXCLUDED.ttl_avg_sh,
+                    ttl_gls_per_sot = EXCLUDED.ttl_gls_per_sot,
+                    ttl_gls_xg_diff = EXCLUDED.ttl_gls_xg_diff,
+                    ttl_pass_cmp = EXCLUDED.ttl_pass_cmp,
+                    ttl_pass_att = EXCLUDED.ttl_pass_att,
+                    pct_pass_cmp = EXCLUDED.pct_pass_cmp,
+                    ttl_pass_prog = EXCLUDED.ttl_pass_prog,
+                    ttl_key_passes = EXCLUDED.ttl_key_passes,
+                    ttl_pass_opp_box = EXCLUDED.ttl_pass_opp_box,
+                    ttl_cross_opp_box = EXCLUDED.ttl_cross_opp_box,
+                    ttl_pass_live = EXCLUDED.ttl_pass_live,
+                    ttl_pass_dead = EXCLUDED.ttl_pass_dead,
+                    ttl_pass_fk = EXCLUDED.ttl_pass_fk,
+                    ttl_through_balls = EXCLUDED.ttl_through_balls,
+                    ttl_switches = EXCLUDED.ttl_switches,
+                    ttl_crosses = EXCLUDED.ttl_crosses,
+                    ttl_pass_offside = EXCLUDED.ttl_pass_offside,
+                    ttl_pass_blocked = EXCLUDED.ttl_pass_blocked,
+                    ttl_throw_ins = EXCLUDED.ttl_throw_ins,
+                    ttl_ck = EXCLUDED.ttl_ck,
+                    ttl_tkl = EXCLUDED.ttl_tkl,
+                    ttl_tkl_won = EXCLUDED.ttl_tkl_won,
+                    ttl_tkl_drb = EXCLUDED.ttl_tkl_drb,
+                    ttl_tkl_drb_att = EXCLUDED.ttl_tkl_drb_att,
+                    pct_tkl_drb_suc = EXCLUDED.pct_tkl_drb_suc,
+                    ttl_blocks = EXCLUDED.ttl_blocks,
+                    ttl_sh_blocked = EXCLUDED.ttl_sh_blocked,
+                    ttl_int = EXCLUDED.ttl_int,
+                    ttl_clearances = EXCLUDED.ttl_clearances,
+                    ttl_def_error = EXCLUDED.ttl_def_error,
+                    avg_poss = EXCLUDED.avg_poss,
+                    ttl_touches = EXCLUDED.ttl_touches,
+                    ttl_take_on_att = EXCLUDED.ttl_take_on_att,
+                    ttl_take_on_suc = EXCLUDED.ttl_take_on_suc,
+                    ttl_carries = EXCLUDED.ttl_carries,
+                    ttl_carries_miscontrolled = EXCLUDED.ttl_carries_miscontrolled,
+                    ttl_carries_dispossessed = EXCLUDED.ttl_carries_dispossessed,
+                    ttl_pass_rcvd = EXCLUDED.ttl_pass_rcvd,
+                    ttl_pass_prog_rcvd = EXCLUDED.ttl_pass_prog_rcvd,
+                    ttl_fls_ag = EXCLUDED.ttl_fls_ag,
+                    ttl_fls_for = EXCLUDED.ttl_fls_for,
+                    ttl_offside = EXCLUDED.ttl_offside,
+                    ttl_og = EXCLUDED.ttl_og,
+                    ttl_ball_recov = EXCLUDED.ttl_ball_recov,
+                    ttl_air_dual_won = EXCLUDED.ttl_air_dual_won,
+                    ttl_air_dual_lost = EXCLUDED.ttl_air_dual_lost,
+                    players_count = EXCLUDED.players_count;
+            """
+            
+            # Procesar cada match (que contiene home_team y away_team)
+            for match_data in match_stats_list:
+                match_id = match_data.get('match_id', '')
+                season_id = match_data.get('season_id', '')
+                
+                # Procesar equipo local
+                if 'home_team' in match_data and match_data['home_team']:
+                    team_data = match_data['home_team']
+                    values = self._extract_team_match_values(match_id, season_id, team_data, 'home')
+                    
+                    if self.cursor and values:
+                        self.cursor.execute(insert_query, values)
+                        inserted_count += 1
+                        print(f"Insertado equipo local: {team_data.get('team_name', 'N/A')}")
+                
+                # Procesar equipo visitante
+                if 'away_team' in match_data and match_data['away_team']:
+                    team_data = match_data['away_team']
+                    values = self._extract_team_match_values(match_id, season_id, team_data, 'away')
+                    
+                    if self.cursor and values:
+                        self.cursor.execute(insert_query, values)
+                        inserted_count += 1
+                        print(f"Insertado equipo visitante: {team_data.get('team_name', 'N/A')}")
+            
+            if self.connection:
+                self.connection.commit()
+            
+            print(f"Se procesaron {inserted_count} registros de estadísticas de match")
+            return inserted_count
+            
+        except psycopg2.Error as e:
+            print(f"Error insertando estadísticas de match: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return 0
+        except Exception as e:
+            print(f"Error inesperado insertando estadísticas de match: {e}")
+            return 0
+
+    def _extract_team_match_values(self, match_id: str, season_id: str, team_data: Dict, home_away: str):
+        """Extrae los valores de estadísticas de un equipo para insertar en la BD"""
+        try:
+            return (
+                match_id,
+                season_id,
+                team_data.get('team_id'),
+                team_data.get('team_name'),
+                home_away,
+                team_data.get('ttl_gls', 0),
+                team_data.get('ttl_ast', 0),
+                team_data.get('ttl_xg', 0.0),
+                team_data.get('ttl_xag', 0.0),
+                team_data.get('ttl_pk_made', 0),
+                team_data.get('ttl_pk_att', 0),
+                team_data.get('ttl_yellow_cards', 0),
+                team_data.get('ttl_red_cards', 0),
+                team_data.get('ttl_gls_ag', 0),
+                team_data.get('ttl_sot_ag', 0),
+                team_data.get('ttl_saves', 0),
+                team_data.get('clean_sheets', 0),
+                team_data.get('ttl_pk_att_ag', 0),
+                team_data.get('ttl_pk_saved', 0),
+                team_data.get('ttl_sh', 0),
+                team_data.get('ttl_sot', 0),
+                team_data.get('pct_sot', 0.0),
+                team_data.get('ttl_avg_sh', 0.0),
+                team_data.get('ttl_gls_per_sot', 0.0),
+                team_data.get('ttl_gls_xg_diff', 0.0),
+                team_data.get('ttl_pass_cmp', 0),
+                team_data.get('ttl_pass_att', 0),
+                team_data.get('pct_pass_cmp', 0.0),
+                team_data.get('ttl_pass_prog', 0),
+                team_data.get('ttl_key_passes', 0),
+                team_data.get('ttl_pass_opp_box', 0),
+                team_data.get('ttl_cross_opp_box', 0),
+                team_data.get('ttl_pass_live', 0),
+                team_data.get('ttl_pass_dead', 0),
+                team_data.get('ttl_pass_fk', 0),
+                team_data.get('ttl_through_balls', 0),
+                team_data.get('ttl_switches', 0),
+                team_data.get('ttl_crosses', 0),
+                team_data.get('ttl_pass_offside', 0),
+                team_data.get('ttl_pass_blocked', 0),
+                team_data.get('ttl_throw_ins', 0),
+                team_data.get('ttl_ck', 0),
+                team_data.get('ttl_tkl', 0),
+                team_data.get('ttl_tkl_won', 0),
+                team_data.get('ttl_tkl_drb', 0),
+                team_data.get('ttl_tkl_drb_att', 0),
+                team_data.get('pct_tkl_drb_suc', 0.0),
+                team_data.get('ttl_blocks', 0),
+                team_data.get('ttl_sh_blocked', 0),
+                team_data.get('ttl_int', 0),
+                team_data.get('ttl_clearances', 0),
+                team_data.get('ttl_def_error', 0),
+                team_data.get('avg_poss', 0.0),
+                team_data.get('ttl_touches', 0),
+                team_data.get('ttl_take_on_att', 0),
+                team_data.get('ttl_take_on_suc', 0),
+                team_data.get('ttl_carries', 0),
+                team_data.get('ttl_carries_miscontrolled', 0),
+                team_data.get('ttl_carries_dispossessed', 0),
+                team_data.get('ttl_pass_rcvd', 0),
+                team_data.get('ttl_pass_prog_rcvd', 0),
+                team_data.get('ttl_fls_ag', 0),
+                team_data.get('ttl_fls_for', 0),
+                team_data.get('ttl_offside', 0),
+                team_data.get('ttl_og', 0),
+                team_data.get('ttl_ball_recov', 0),
+                team_data.get('ttl_air_dual_won', 0),
+                team_data.get('ttl_air_dual_lost', 0),
+                team_data.get('players_count', 0)
+            )
+        except Exception as e:
+            print(f"Error extrayendo valores del equipo: {e}")
+            return None
         
 ###################################################################################
 
@@ -1131,6 +1800,8 @@ class MenuController:
         print("3. Obtener y guardar datos de los equipos de la Premier League (2017-2024)")
         print("4. Obtener y guardar partidos de todas las temporadas (2017-2024)")
         print("5. Obtener y guardar estadísticas de equipos por temporada (2017-2024)")
+        print("6. Obtener y guardar estadísticas de equipo por temporada partido (2017-2024)")
+        print("7. Procesar estadísticas de matches registrados (2017-2024)")
         print("0. Salir")
         print("=" * 60)
 
@@ -1192,8 +1863,6 @@ class MenuController:
 
         self.db_manager.disconnect()
     
-
-
     def handle_data_matches(self):
         """Maneja la obtención y guardado de datos de partidos"""
         
@@ -1246,6 +1915,36 @@ class MenuController:
         
         self.db_manager.disconnect()
 
+    def handle_match_stats_processing(self):
+        """Maneja el procesamiento de estadísticas de matches registrados"""
+        
+        # Verificar conexión a BD
+        if not self.db_manager.connect():
+            print("No se puede continuar sin conexión a la base de datos")
+            return
+        
+        # Procesar todas las temporadas y matches registrados
+        match_stats_data = self.api_client.process_all_seasons_matches(self.db_manager)
+        
+        if not match_stats_data:
+            print("No se obtuvieron estadísticas de matches")
+            self.db_manager.disconnect()
+            return
+        
+        if not isinstance(match_stats_data, list):
+            print("Formato de datos inesperado, se esperaba una lista")
+            self.db_manager.disconnect()
+            return
+        
+        print(f"Se obtuvieron estadísticas de {len(match_stats_data)} matches")
+        
+        # Insertar datos en la base de datos
+        inserted_count = self.db_manager.insert_team_match_stats(match_stats_data)
+        
+        print(f"Procesamiento completado. Se insertaron {inserted_count} registros en la base de datos.")
+        
+        self.db_manager.disconnect()
+
     def run(self):
         # Es el menú principal
         if not self.api_client.api_key:
@@ -1266,6 +1965,10 @@ class MenuController:
                 self.handle_data_matches()
             elif choice == "5":
                 self.handle_team_season_stats()
+            elif choice == "6":
+                print("Opción 6 no implementada aún.")
+            elif choice == "7":
+                self.handle_match_stats_processing()
             elif choice == "0":
                 print("Saliendo...")
                 break
