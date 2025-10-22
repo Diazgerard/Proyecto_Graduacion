@@ -1030,6 +1030,61 @@ class FBRAPIClient:
 
     #Falta un metodo mas
 
+    def get_matchday(self, searon_id: str) -> Optional[List[Dict]]:
+        try:
+            url = f"{self.base_url}/matches?league_id={self.league_id}&season_id={searon_id}"
+            print(f"Haciendo request a: {url}")
+
+            headers = {
+                'x-api-key': self.api_key,
+                'Accept': 'application/json'
+            }
+
+            payload = {}
+
+            response = self.session.get(url, headers=headers, data=payload, timeout=30)
+
+            print(f"Response Status Code: {response.status_code}")
+
+            if response.status_code in [200, 201]:
+                try:
+                    data = response.json()
+                    
+                    # Los datos vienen en el campo 'data'
+                    if isinstance(data, dict) and 'data' in data:
+                        matches_data = data['data']
+                    elif isinstance(data, list):
+                        matches_data = data
+                    else:
+                        print("Formato de datos inesperado en la respuesta JSON")
+                        return None
+
+                    matchdays = []
+                    for match in matches_data:
+                        matchday_info = {
+                            'match_id': match.get('match_id'),
+                            'matchday': match.get('wk')
+                        }
+                        matchdays.append(matchday_info)
+                    
+                    return matchdays
+                
+                except json.JSONDecodeError as e:
+                    print(f"Error parseando JSON: {e}")
+                    print(f"Respuesta: {response.text}")
+                    return None
+            else:
+                print(f"Error en la API: {response.status_code}")
+                print(f"Contenido del error: {response.text}")
+                return None
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error de conexión: {e}")
+            return None
+        except Exception as e:
+            print(f"Error inesperado: {e}")
+            return None
+
 ###################################################################################
 
 class DatabaseManager:
@@ -1782,6 +1837,32 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error extrayendo valores del equipo: {e}")
             return None
+    
+    def update_matchday_in_matches_registered(self, match_id: str, matchday: int) -> bool:
+        """Actualiza el campo matchday en la tabla matches_registered"""
+        try:
+            update_query = """
+                UPDATE matches_registered
+                SET matchday = %s
+                WHERE match_id = %s
+            """
+            if self.cursor:
+                self.cursor.execute(update_query, (matchday, match_id))
+                if self.connection:
+                    self.connection.commit()
+                print(f"Se actualizó matchday a {matchday} para match_id {match_id}")
+                return True
+            else:
+                print("No hay conexión a la base de datos")
+                return False
+        except psycopg2.Error as e:
+            print(f"Error actualizando matchday: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False
+        except Exception as e:
+            print(f"Error inesperado actualizando matchday: {e}")
+            return False
         
 ###################################################################################
 
@@ -1802,6 +1883,7 @@ class MenuController:
         print("5. Obtener y guardar estadísticas de equipos por temporada (2017-2024)")
         print("6. Obtener y guardar estadísticas de equipo por temporada partido (2017-2024)")
         print("7. Procesar estadísticas de matches registrados (2017-2024)")
+        print("8. Actualizar matchday automáticamente para todas las temporadas (2017-2024)")
         print("0. Salir")
         print("=" * 60)
 
@@ -1945,6 +2027,75 @@ class MenuController:
         
         self.db_manager.disconnect()
 
+    def handle_update_matchday(self):
+        """Maneja la actualización automática del campo matchday en matches_registered para todas las temporadas"""
+        
+        # Verificar conexión a BD
+        if not self.db_manager.connect():
+            print("No se puede continuar sin conexión a la base de datos")
+            return
+        
+        # Lista de temporadas a procesar
+        target_seasons = [
+            '2017-2018', '2018-2019', '2019-2020', 
+            '2020-2021', '2021-2022', '2022-2023', 
+            '2023-2024', '2024-2025'
+        ]
+        
+        total_updated = 0
+        
+        print("=== INICIANDO ACTUALIZACIÓN AUTOMÁTICA DE MATCHDAYS ===")
+        
+        for season_idx, season in enumerate(target_seasons):
+            print(f"\n--- Procesando temporada {season} ({season_idx + 1}/{len(target_seasons)}) ---")
+            
+            # Obtener datos de matchday desde la API
+            matchday_data = self.api_client.get_matchday(season)
+            
+            if not matchday_data:
+                print(f"No se obtuvieron datos de matchday para la temporada {season}")
+                continue
+            
+            season_updated = 0
+            
+            # Actualizar cada match
+            for match_info in matchday_data:
+                match_id = match_info.get('match_id')
+                matchday = match_info.get('matchday')
+                
+                if match_id and matchday:
+                    try:
+                        # Convertir matchday a entero
+                        matchday_int = int(matchday)
+                        
+                        # Actualizar en la base de datos
+                        success = self.db_manager.update_matchday_in_matches_registered(match_id, matchday_int)
+                        
+                        if success:
+                            season_updated += 1
+                            total_updated += 1
+                            print(f"  ✓ Actualizado match {match_id} -> matchday {matchday_int}")
+                        else:
+                            print(f"  ✗ Error actualizando match {match_id}")
+                            
+                    except (ValueError, TypeError) as e:
+                        print(f"  ✗ Error convirtiendo matchday para match {match_id}: {e}")
+                        continue
+                else:
+                    print(f"  ✗ Datos incompletos para un match: {match_info}")
+            
+            print(f"Temporada {season}: {season_updated} matches actualizados")
+            
+            # Pausa entre temporadas para evitar rate limiting
+            if season_idx < len(target_seasons) - 1:
+                print("Pausa entre temporadas...")
+                time.sleep(2)
+        
+        print(f"\n=== ACTUALIZACIÓN COMPLETADA ===")
+        print(f"Total de matches actualizados: {total_updated}")
+        
+        self.db_manager.disconnect()
+
     def run(self):
         # Es el menú principal
         if not self.api_client.api_key:
@@ -1969,6 +2120,8 @@ class MenuController:
                 print("Opción 6 no implementada aún.")
             elif choice == "7":
                 self.handle_match_stats_processing()
+            elif choice == "8":
+                self.handle_update_matchday()
             elif choice == "0":
                 print("Saliendo...")
                 break
