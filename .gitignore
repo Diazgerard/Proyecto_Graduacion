@@ -296,6 +296,7 @@ data/
 *.json
 *.xml
 *.png
+*.txt
 
 # Environment variables and secrets
 .secrets
