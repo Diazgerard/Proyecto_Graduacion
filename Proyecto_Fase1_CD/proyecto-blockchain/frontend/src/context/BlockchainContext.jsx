@@ -1,236 +1,271 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { ethers } from 'ethers'
-import { CONTRACT_ADDRESS } from '../contracts/contract-address'
-import contractABI from '../contracts/contractABI.json'
+// src/context/BlockchainContext.jsx
+import { createContext, useContext, useState, useEffect } from "react";
+import { ethers } from "ethers";
+import contractABI from "../contracts/contractABI.json";
+import contractAddress from "../contracts/contract-address.json";
 
-const BlockchainContext = createContext()
-
-export const useBlockchain = () => {
-  const context = useContext(BlockchainContext)
-  if (!context) {
-    throw new Error('useBlockchain must be used within a BlockchainProvider')
-  }
-  return context
-}
+export const BlockchainContext = createContext();
 
 export const BlockchainProvider = ({ children }) => {
-  const [account, setAccount] = useState('')
-  const [contract, setContract] = useState(null)
-  const [provider, setProvider] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [transactions, setTransactions] = useState([])
+  const [account, setAccount] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [contract, setContract] = useState(null);
+  const [provider, setProvider] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [allMessages, setAllMessages] = useState([]);
+  const [message, setMessageState] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   // Conectar wallet
   const connectWallet = async () => {
-    try {
-      if (window.ethereum) {
-        setIsLoading(true)
-        
-        // Solicitar conexión a MetaMask
-        const accounts = await window.ethereum.request({
-          method: 'eth_requestAccounts'
-        })
-        
-        // Configurar provider
-        const web3Provider = new ethers.BrowserProvider(window.ethereum)
-        const signer = await web3Provider.getSigner()
-        
-        // Instanciar contrato
-        const contractInstance = new ethers.Contract(
-          CONTRACT_ADDRESS,
-          contractABI,
-          signer
-        )
-        
-        setAccount(accounts[0])
-        setProvider(web3Provider)
-        setContract(contractInstance)
-        
-        console.log('✅ Wallet conectada:', accounts[0])
-        return true
-      } else {
-        alert('MetaMask no está instalado!')
-        return false
-      }
-    } catch (error) {
-      console.error('Error conectando wallet:', error)
-      alert('Error al conectar wallet: ' + error.message)
-      return false
-    } finally {
-      setIsLoading(false)
+    if (!window.ethereum) {
+      alert("Instala MetaMask para continuar");
+      return;
     }
-  }
 
-  // Desconectar wallet
-  const disconnectWallet = () => {
-    setAccount('')
-    setContract(null)
-    setProvider(null)
-    setTransactions([])
-  }
-
-  // Obtener datos del contrato
-  const getData = async () => {
     try {
-      if (!contract) return null
-      const data = await contract.getData()
-      return data
-    } catch (error) {
-      console.error('Error obteniendo datos:', error)
-      return null
-    }
-  }
+      const [selectedAccount] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      setAccount(selectedAccount);
+      setIsConnected(true);
 
-  // Establecer datos en el contrato
-  const setData = async (newData) => {
-    try {
-      if (!contract) throw new Error('Contrato no conectado')
+      const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await ethersProvider.getSigner();
+      const contractInstance = new ethers.Contract(contractAddress.address, contractABI.abi, signer);
       
-      setIsLoading(true)
-      const tx = await contract.setData(newData)
-      await tx.wait()
-      
-      console.log('✅ Datos actualizados:', newData)
-      return true
-    } catch (error) {
-      console.error('Error estableciendo datos:', error)
-      alert('Error: ' + error.message)
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      setProvider(ethersProvider);
+      setContract(contractInstance);
 
-  // Almacenar transacción
-  const storeTransaction = async (to, amount, message) => {
-    try {
-      if (!contract) throw new Error('Contrato no conectado')
-      
-      setIsLoading(true)
-      const tx = await contract.storeTransaction(to, amount, message)
-      await tx.wait()
-      
-      console.log('✅ Transacción almacenada')
-      await loadTransactions() // Recargar transacciones
-      return true
-    } catch (error) {
-      console.error('Error almacenando transacción:', error)
-      alert('Error: ' + error.message)
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      // Cargar mensaje inicial
+      const msg = await contractInstance.getData();
+      setMessageState(msg);
 
-  // Cargar todas las transacciones
-  const loadTransactions = async () => {
-    try {
-      if (!contract) return
+      // Cargar TODAS las transacciones iniciales (eventos del contrato)
+      await loadAllTransactions(contractInstance, ethersProvider);
       
-      const allTransactions = await contract.getAllTransactions()
-      const formattedTransactions = allTransactions.map((tx, index) => ({
-        id: index,
-        from: tx.from,
-        to: tx.to,
-        amount: tx.amount.toString(),
-        message: tx.message,
-        timestamp: new Date(Number(tx.timestamp) * 1000).toLocaleString()
-      }))
-      
-      setTransactions(formattedTransactions)
-    } catch (error) {
-      console.error('Error cargando transacciones:', error)
-    }
-  }
+      console.log('Wallet conectada y datos cargados');
 
-  // Ejecutar acción genérica
-  const executeAction = async (action) => {
-    try {
-      if (!contract) throw new Error('Contrato no conectado')
-      
-      setIsLoading(true)
-      const tx = await contract.executeAction(action)
-      const receipt = await tx.wait()
-      
-      console.log('✅ Acción ejecutada:', action)
-      return receipt
-    } catch (error) {
-      console.error('Error ejecutando acción:', error)
-      alert('Error: ' + error.message)
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Verificar si ya hay una conexión
-  const checkConnection = async () => {
-    try {
-      if (window.ethereum) {
-        const accounts = await window.ethereum.request({
-          method: 'eth_accounts'
-        })
+      // Escuchar eventos en tiempo real
+      contractInstance.on("DataUpdated", async (sender, newData, timestamp, event) => {
+        console.log("🔥 Nuevo evento recibido:", { sender, newData, timestamp });
         
-        if (accounts.length > 0) {
-          await connectWallet()
+        // Actualizar mensaje actual
+        setMessageState(newData);
+        
+        // Crear nuevo registro de transacción
+        try {
+          const txRecord = {
+            from: sender,
+            message: newData,
+            amount: newData, // Para compatibilidad
+            date: new Date(Number(timestamp) * 1000).toLocaleString(),
+            timestamp: new Date(Number(timestamp) * 1000),
+            blockNumber: event.log.blockNumber,
+            transactionHash: event.log.transactionHash
+          };
+          
+          setTransactions(prev => [txRecord, ...prev]);
+          setAllMessages(prev => [txRecord, ...prev]);
+          
+          console.log('✅ Nueva transacción agregada:', txRecord);
+        } catch (err) {
+          console.error("❌ Error procesando nuevo evento:", err);
         }
-      }
-    } catch (error) {
-      console.error('Error verificando conexión:', error)
+      });
+
+    } catch (err) {
+      console.error(err);
     }
-  }
+  };
+
+  const disconnectWallet = () => {
+    // Limpiar listeners de eventos si existe el contrato
+    if (contract) {
+      contract.removeAllListeners("DataUpdated");
+    }
+    
+    setAccount(null);
+    setIsConnected(false);
+    setContract(null);
+    setProvider(null);
+    setTransactions([]);
+    setAllMessages([]);
+    setMessageState("");
+    setIsLoading(false);
+    
+    console.log('👋 Wallet desconectada');
+  };
 
   // Escuchar cambios de cuenta
   useEffect(() => {
     if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length === 0) {
-          disconnectWallet()
-        } else {
-          setAccount(accounts[0])
+      window.ethereum.on("accountsChanged", (accounts) => {
+        if (accounts.length > 0) setAccount(accounts[0]);
+        else disconnectWallet();
+      });
+    }
+  }, []);
+
+  // Guardar mensaje en blockchain
+  const setData = async (newMessage) => {
+    if (!contract || !account) {
+      throw new Error("Wallet no conectada o contrato no disponible");
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Enviar transacción
+      const tx = await contract.setData(newMessage);
+      console.log("Transacción enviada:", tx.hash);
+      
+      // Esperar confirmación
+      const receipt = await tx.wait();
+      console.log("Transacción confirmada:", receipt);
+      
+      // El evento se procesará automáticamente por el listener
+      return { success: true, hash: tx.hash };
+      
+    } catch (err) {
+      console.error("Error enviando transacción:", err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Obtener mensaje actual
+  const getData = async () => {
+    if (!contract) return "";
+    const msg = await contract.getData();
+    setMessageState(msg);
+    return msg;
+  };
+
+  // Obtener todas las transacciones desde los eventos
+  const getTransactions = async () => {
+    if (!contract) return [];
+    try {
+      const filter = contract.filters.DataUpdated();
+      const events = await contract.queryFilter(filter);
+      
+      const transactions = await Promise.all(events.map(async (event) => {
+        try {
+          const block = await provider.getBlock(event.blockNumber);
+          return {
+            from: event.args.by || event.args.sender,
+            amount: event.args.newData,
+            date: new Date(block.timestamp * 1000).toLocaleString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+            timestamp: block.timestamp
+          };
+        } catch (err) {
+          console.error(`Error processing event:`, err);
+          return null;
         }
-      })
-
-      window.ethereum.on('chainChanged', () => {
-        window.location.reload()
-      })
+      }));
+      
+      return transactions.filter(tx => tx !== null).reverse();
+    } catch (err) {
+      console.error("Error al obtener transacciones:", err);
+      return transactions; // Retornar las transacciones locales si falla
     }
+  };
 
-    checkConnection()
 
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeAllListeners('accountsChanged')
-        window.ethereum.removeAllListeners('chainChanged')
+  // Cargar TODAS las transacciones desde el inicio del contrato
+  const loadAllTransactions = async (contractInstance, ethersProvider) => {
+    try {
+      console.log('🔄 Cargando todas las transacciones...');
+      
+      // Obtener todos los eventos DataUpdated desde el bloque 0
+      const filter = contractInstance.filters.DataUpdated();
+      const events = await contractInstance.queryFilter(filter, 0, 'latest');
+      
+      console.log(`📊 Encontrados ${events.length} eventos en total`);
+      
+      if (events.length === 0) {
+        console.log('ℹ️  No hay eventos aún');
+        setTransactions([]);
+        setAllMessages([]);
+        return;
       }
+      
+      // Procesar todos los eventos
+      const processedTransactions = events.map((event) => {
+        try {
+          return {
+            from: event.args.by,
+            message: event.args.newData,
+            amount: event.args.newData, // Para compatibilidad
+            timestamp: new Date(Number(event.args.timestamp) * 1000),
+            date: new Date(Number(event.args.timestamp) * 1000).toLocaleString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          };
+        } catch (err) {
+          console.error(`❌ Error procesando evento:`, err);
+          return null;
+        }
+      });
+      
+      // Filtrar eventos válidos y ordenar por más recientes primero
+      const validTransactions = processedTransactions
+        .filter(tx => tx !== null)
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      console.log(`✅ ${validTransactions.length} transacciones procesadas correctamente`);
+      
+      setTransactions(validTransactions);
+      setAllMessages(validTransactions);
+      
+    } catch (err) {
+      console.error("❌ Error cargando todas las transacciones:", err);
+      setTransactions([]);
+      setAllMessages([]);
     }
-  }, [])
+  };
 
-  // Cargar transacciones cuando el contrato esté listo
-  useEffect(() => {
-    if (contract) {
-      loadTransactions()
+  // Función para refrescar datos manualmente
+  const refreshData = async () => {
+    if (!contract || !provider) return;
+    
+    setIsLoading(true);
+    try {
+      await loadAllTransactions(contract, provider);
+      const currentMessage = await contract.getData();
+      setMessageState(currentMessage);
+      console.log('🔄 Datos refrescados');
+    } catch (err) {
+      console.error("❌ Error refrescando datos:", err);
+    } finally {
+      setIsLoading(false);
     }
-  }, [contract])
-
-  const value = {
-    account,
-    contract,
-    provider,
-    isLoading,
-    transactions,
-    connectWallet,
-    disconnectWallet,
-    getData,
-    setData,
-    storeTransaction,
-    loadTransactions,
-    executeAction
-  }
+  };
 
   return (
-    <BlockchainContext.Provider value={value}>
+    <BlockchainContext.Provider
+      value={{
+        account,
+        isConnected,
+        connectWallet,
+        disconnectWallet,
+        contract,
+        provider,
+        message,
+        setData,
+        getData,
+        transactions,
+        allMessages,
+        getTransactions,
+        isLoading,
+        refreshData,
+      }}
+    >
       {children}
     </BlockchainContext.Provider>
-  )
-}
+  );
+};
+
+// Hook para usar en componentes
+export const useBlockchain = () => useContext(BlockchainContext);

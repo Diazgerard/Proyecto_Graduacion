@@ -1,296 +1,153 @@
-import { useState, useEffect } from 'react'
-import { useBlockchain } from '../context/BlockchainContext'
-import Loader from '../components/Loader'
+// src/pages/Dashboard.jsx
+import { useState, useEffect } from "react";
+import { useBlockchain } from "../context/BlockchainContext";
 
-const Dashboard = () => {
+export default function Dashboard() {
   const { 
+    isConnected, 
     account, 
-    contract, 
-    isLoading, 
-    getData, 
-    setData, 
-    storeTransaction, 
-    executeAction 
-  } = useBlockchain()
+    message, 
+    allMessages, 
+    isLoading,
+    refreshData 
+  } = useBlockchain();
+  
+  const [stats, setStats] = useState({
+    totalMessages: 0,
+    lastUpdate: null
+  });
 
-  const [currentData, setCurrentData] = useState('')
-  const [newData, setNewData] = useState('')
-  const [transactionForm, setTransactionForm] = useState({
-    to: '',
-    amount: '',
-    message: ''
-  })
-  const [actionInput, setActionInput] = useState('')
-
-  // Cargar datos actuales al montar el componente
+  // Actualizar estadísticas cuando cambien los mensajes
   useEffect(() => {
-    if (contract) {
-      loadCurrentData()
+    if (allMessages && allMessages.length > 0) {
+      setStats({
+        totalMessages: allMessages.length,
+        lastUpdate: allMessages[0].timestamp
+      });
+    } else {
+      setStats({
+        totalMessages: 0,
+        lastUpdate: null
+      });
     }
-  }, [contract])
+  }, [allMessages]);
 
-  const loadCurrentData = async () => {
-    const data = await getData()
-    if (data) {
-      setCurrentData(data)
-    }
-  }
 
-  const handleSetData = async (e) => {
-    e.preventDefault()
-    if (!newData.trim()) return
 
-    const success = await setData(newData)
-    if (success) {
-      setNewData('')
-      loadCurrentData()
-    }
-  }
-
-  const handleStoreTransaction = async (e) => {
-    e.preventDefault()
-    const { to, amount, message } = transactionForm
-    
-    if (!to || !amount || !message) {
-      alert('Por favor completa todos los campos')
-      return
-    }
-
-    const success = await storeTransaction(to, amount, message)
-    if (success) {
-      setTransactionForm({ to: '', amount: '', message: '' })
-    }
-  }
-
-  const handleExecuteAction = async (e) => {
-    e.preventDefault()
-    if (!actionInput.trim()) return
-
-    const result = await executeAction(actionInput)
-    if (result) {
-      setActionInput('')
-      loadCurrentData()
-    }
-  }
-
-  if (!account) {
+  if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6">
-        <div className="glass rounded-2xl p-12 text-center max-w-md mx-auto">
-          <div className="w-20 h-20 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl mx-auto mb-6"></div>
-          <h2 className="text-2xl font-bold text-white mb-4">
-            Wallet Requerida
-          </h2>
-          <p className="text-gray-300 text-lg mb-6">
-            Conecta tu wallet MetaMask para acceder al dashboard y todas las funcionalidades de la dApp.
-          </p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-20">
+            <h1 className="text-4xl font-bold text-white mb-4">Dashboard</h1>
+            <p className="text-gray-300 text-lg">Conecta tu wallet para ver todas las transacciones y mensajes</p>
+          </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="min-h-screen px-6 py-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Control Center
-          </h1>
-          <p className="text-gray-300 text-lg">
-            Gestiona tu interacción con la blockchain
-          </p>
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
+          <p className="text-gray-300">Visualiza todos los mensajes almacenados en la blockchain</p>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-300 text-sm mb-2">Estado del Contrato</p>
-                <p className="text-xl font-bold text-white">
-                  {contract ? 'Conectado' : 'Desconectado'}
-                </p>
-              </div>
-              <div className={`w-12 h-12 rounded-xl ${contract ? 'bg-green-500' : 'bg-red-500'}`}></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="glass rounded-2xl p-6">
+            <div className="flex flex-col">
+              <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Total Mensajes</h3>
+              <p className="text-3xl font-bold text-white mt-2">{stats.totalMessages}</p>
             </div>
-          </div>
-
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-300 text-sm mb-2">Red Activa</p>
-                <p className="text-xl font-bold text-white">Localhost</p>
-              </div>
-              <div className="w-12 h-12 bg-purple-500 rounded-xl"></div>
-            </div>
-          </div>
-
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-300 text-sm mb-2">Tu Wallet</p>
-                <p className="text-lg font-bold text-white font-mono">
-                  {account?.slice(0, 6)}...{account?.slice(-4)}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-blue-500 rounded-xl"></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Sections */}
-        <div className="grid lg:grid-cols-2 gap-4 mb-4">
-          {/* Contract Data Section */}
-          <div className="glass rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-3">
-              <div className="w-6 h-6 bg-gradient-to-r from-blue-400 to-purple-500 rounded-md"></div>
-              <h2 className="text-sm font-bold text-white">Datos del Contrato</h2>
-            </div>
-            
-            <div className="mb-6">
-              <label className="block text-gray-300 text-sm font-medium mb-3">
-                Datos actuales almacenados:
-              </label>
-              <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-                <code className="text-white font-mono text-sm break-all">
-                  {currentData || 'Cargando datos...'}
-                </code>
-              </div>
-            </div>
-
-            <form onSubmit={handleSetData} className="space-y-4">
-              <div>
-                <label htmlFor="newData" className="block text-gray-300 text-sm font-medium mb-2">
-                  Actualizar datos:
-                </label>
-                <input
-                  type="text"
-                  id="newData"
-                  value={newData}
-                  onChange={(e) => setNewData(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-base"
-                  placeholder="Ingresa nuevos datos..."
-                  disabled={isLoading}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isLoading || !newData.trim()}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 px-6 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center space-x-2 text-base"
-              >
-                {isLoading && (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                )}
-                <span>{isLoading ? 'Actualizando...' : 'Actualizar Datos'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* Store Transaction Section */}
-          <div className="glass rounded-2xl p-8">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white">Transacción</h2>
-            </div>
-            
-            <form onSubmit={handleStoreTransaction} className="space-y-6">
-              <div>
-                <label htmlFor="to" className="block text-gray-300 text-sm font-medium mb-2">
-                  Dirección destino:
-                </label>
-                <input
-                  type="text"
-                  id="to"
-                  value={transactionForm.to}
-                  onChange={(e) => setTransactionForm(prev => ({ ...prev, to: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all font-mono text-base"
-                  placeholder="0x..."
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="amount" className="block text-gray-300 text-sm font-medium mb-2">
-                  Cantidad (ETH):
-                </label>
-                <input
-                  type="number"
-                  id="amount"
-                  value={transactionForm.amount}
-                  onChange={(e) => setTransactionForm(prev => ({ ...prev, amount: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-base"
-                  placeholder="0.0"
-                  step="0.01"
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="message" className="block text-gray-300 text-sm font-medium mb-2">
-                  Mensaje:
-                </label>
-                <textarea
-                  id="message"
-                  value={transactionForm.message}
-                  onChange={(e) => setTransactionForm(prev => ({ ...prev, message: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none text-base"
-                  placeholder="Descripción de la transacción..."
-                  rows="3"
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 px-6 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center space-x-2 text-base"
-              >
-                {isLoading && (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                )}
-                <span>{isLoading ? 'Procesando...' : 'Crear Transacción'}</span>
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* Execute Action Section */}
-        <div className="glass rounded-2xl p-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-bold text-white">Ejecutar Acción Personalizada</h2>
           </div>
           
-          <form onSubmit={handleExecuteAction} className="space-y-6">
-            <div>
-              <label htmlFor="action" className="block text-gray-300 text-sm font-medium mb-2">
-                Describe la acción a ejecutar:
-              </label>
-              <input
-                type="text"
-                id="action"
-                value={actionInput}
-                onChange={(e) => setActionInput(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-base"
-                placeholder="Ej: actualizar configuración, procesar datos, etc..."
-                disabled={isLoading}
-              />
+          <div className="glass rounded-2xl p-6">
+            <div className="flex flex-col">
+              <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Estado</h3>
+              <p className="text-sm font-medium text-green-400 mt-2">Wallet Conectada</p>
+              <p className="text-xs text-gray-400">{account?.slice(0, 6)}...{account?.slice(-4)}</p>
             </div>
-            
+          </div>
+        </div>
+
+        {/* Current Message */}
+        <div className="glass rounded-2xl p-8">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Mensaje Actual</h2>
+              <p className="text-gray-400 mt-2">El último mensaje almacenado en el contrato</p>
+            </div>
             <button
-              type="submit"
-              disabled={isLoading || !actionInput.trim()}
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 px-6 rounded-lg font-medium transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center space-x-2 text-base"
+              onClick={refreshData}
+              disabled={isLoading}
+              className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 text-sm"
             >
-              {isLoading && (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+              {isLoading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Actualizando...</span>
+                </div>
+              ) : (
+                'Actualizar'
               )}
-              <span>{isLoading ? 'Ejecutando...' : 'Ejecutar Acción'}</span>
             </button>
-          </form>
+          </div>
+          
+          <div className="bg-slate-800/50 rounded-xl p-6">
+            <p className="text-gray-300 text-lg">
+              {message || "No hay mensaje guardado aún."}
+            </p>
+          </div>
+        </div>
+
+        {/* All Messages History */}
+        <div className="glass rounded-2xl p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-white">Historial Completo de Mensajes</h2>
+            <p className="text-gray-400 mt-2">Todos los mensajes enviados al contrato desde su creación</p>
+          </div>
+          
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {isLoading && allMessages.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-400">Cargando mensajes...</p>
+              </div>
+            ) : allMessages.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-400 text-lg">No hay mensajes registrados aún.</p>
+                <p className="text-gray-500 text-sm mt-2">Ve a la página de inicio para enviar tu primer mensaje</p>
+              </div>
+            ) : (
+              allMessages.map((msg, index) => (
+                <div key={`${msg.transactionHash}-${index}`} className="bg-slate-800/30 rounded-xl p-6 border border-slate-700">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <p className="text-white text-lg font-medium mb-3">{msg.message}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-400">
+                        <span>👤 {msg.from.slice(0, 6)}...{msg.from.slice(-4)}</span>
+                        <span>📅 {msg.timestamp ? msg.timestamp.toLocaleString() : msg.date}</span>
+                        <span>🧱 Bloque: {msg.blockNumber}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 bg-slate-700 px-2 py-1 rounded">
+                      #{allMessages.length - index}
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-blue-400 font-mono truncate bg-slate-900/50 p-2 rounded mt-3">
+                    🔗 {msg.transactionHash}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
-
-export default Dashboard

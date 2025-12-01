@@ -1,160 +1,233 @@
-import { Link } from 'react-router-dom'
-import { useBlockchain } from '../context/BlockchainContext'
-import ConnectWalletButton from '../components/ConnectWalletButton'
+// src/pages/Home.jsx
+import { useState } from "react";
+import { useBlockchain } from "../context/BlockchainContext";
+import ConnectWalletButton from "../components/ConnectWalletButton";
 
-const Home = () => {
-  const { account } = useBlockchain()
+export default function Home() {
+  const { isConnected, message, setData } = useBlockchain();
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    
+    setLoading(true);
+    setSuccessMessage("");
+    try {
+      await setData(input);
+      setInput("");
+      setSuccessMessage("¡Mensaje enviado exitosamente a la blockchain!");
+      setTimeout(() => setSuccessMessage(""), 5000);
+    } catch (err) {
+      console.error("Error al enviar mensaje:", err);
+    }
+    setLoading(false);
+  };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-pink-600/20"></div>
-        <div className="relative max-w-4xl mx-auto px-6 py-12">
-          <div className="text-center animate-fadeInUp">
-            <div className="inline-flex items-center bg-white/10 backdrop-blur-md rounded-full px-4 py-2 mb-6 text-sm">
-              <span className="text-white font-medium">Blockchain Ready</span>
+      <section className="px-6 py-12">
+        <div className="max-w-4xl mx-auto text-center">
+          <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+            Almacena Datos en la
+            <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"> Blockchain</span>
+          </h1>
+          <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+            Una aplicación descentralizada que permite almacenar y gestionar datos de forma segura en la blockchain de Ethereum.
+          </p>
+
+          {/* Send Message Form */}
+          {isConnected ? (
+            <div className="max-w-2xl mx-auto mt-12">
+              <div className="glass rounded-2xl p-8">
+                <h2 className="text-2xl font-bold text-white mb-6">Enviar Mensaje a la Blockchain</h2>
+                
+                {successMessage && (
+                  <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 mb-6">
+                    <p className="text-green-400 text-center">{successMessage}</p>
+                  </div>
+                )}
+                
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  <div>
+                    <label htmlFor="message" className="block text-gray-300 text-sm font-medium mb-3">
+                      Tu Mensaje
+                    </label>
+                    <textarea
+                      id="message"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Escribe tu mensaje que será almacenado permanentemente en la blockchain..."
+                      className="w-full bg-slate-800/50 border border-slate-600 rounded-xl px-4 py-4 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
+                      rows={4}
+                      required
+                    />
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    disabled={loading || !input.trim()}
+                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 px-6 rounded-xl font-medium transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center text-base"
+                  >
+                    {loading && (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                    )}
+                    <span>{loading ? 'Enviando a la Blockchain...' : 'Enviar Mensaje'}</span>
+                  </button>
+                </form>
+
+                {message && (
+                  <div className="mt-6 p-4 bg-slate-800/50 rounded-xl">
+                    <p className="text-gray-300 text-sm mb-1">Último mensaje almacenado:</p>
+                    <p className="text-white font-medium">{message}</p>
+                  </div>
+                )}
+              </div>
             </div>
-            
-            <h1 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-6 leading-tight">
-              CryptoHub dApp
-            </h1>
-            
-            <p className="text-lg text-gray-200 mb-8 max-w-2xl mx-auto leading-relaxed">
-              Explora el futuro de las aplicaciones descentralizadas. 
-              Conecta tu wallet y descubre el poder de la blockchain.
-            </p>
-            
-            {!account ? (
-              <div className="space-y-4">
+          ) : (
+            <div className="max-w-2xl mx-auto mt-12">
+              <div className="glass rounded-2xl p-8 text-center">
+                <h2 className="text-2xl font-bold text-white mb-4">Conecta tu Wallet</h2>
+                <p className="text-gray-300 mb-6">Para enviar mensajes a la blockchain, necesitas conectar tu wallet de Ethereum.</p>
                 <ConnectWalletButton />
-                <div className="flex items-center justify-center text-gray-300">
-                  <span className="text-sm">Requiere MetaMask para comenzar</span>
-                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="inline-flex items-center glass px-6 py-3 rounded-lg">
-                  <span className="text-white font-medium text-sm">Wallet Conectada</span>
-                </div>
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-8 py-4 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-500/25 text-lg"
-                >
-                  <span>Acceder al Dashboard</span>
-                </Link>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
 
       {/* Features Section */}
-      <div className="max-w-6xl mx-auto px-6 py-16">
-        <div className="text-center mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
-            Funcionalidades Principales
-          </h2>
-          <p className="text-gray-300 text-lg max-w-2xl mx-auto">
-            Descubre todo lo que puedes hacer con nuestra plataforma blockchain
-          </p>
+      <section className="px-6 py-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl md:text-4xl font-bold text-white mb-4">
+              Características Principales
+            </h2>
+            <p className="text-gray-300 text-lg max-w-2xl mx-auto">
+              Descubre las potentes funcionalidades de nuestra aplicación blockchain
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="glass rounded-2xl p-8 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mb-6 mx-auto">
+                <span className="text-2xl font-bold text-white">🔒</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-4 text-center">Almacenamiento Seguro</h3>
+              <p className="text-gray-300 text-center leading-relaxed">
+                Tus datos se almacenan de forma inmutable y segura en la blockchain de Ethereum
+              </p>
+            </div>
+            
+            <div className="glass rounded-2xl p-8 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-600 rounded-xl flex items-center justify-center mb-6 mx-auto">
+                <span className="text-2xl font-bold text-white">👁️</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-4 text-center">Transparencia Total</h3>
+              <p className="text-gray-300 text-center leading-relaxed">
+                Todas las transacciones son públicas y verificables en la blockchain
+              </p>
+            </div>
+            
+            <div className="glass rounded-2xl p-8 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mb-6 mx-auto">
+                <span className="text-2xl font-bold text-white">🌐</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-4 text-center">Descentralizado</h3>
+              <p className="text-gray-300 text-center leading-relaxed">
+                Sin intermediarios, conecta directamente con los smart contracts
+              </p>
+            </div>
+          </div>
         </div>
-
-        <div className="grid md:grid-cols-3 gap-8">
-          <div className="glass rounded-xl p-8 text-center hover:scale-105 transition-all duration-300 group">
-            <div className="w-16 h-16 bg-gradient-to-r from-blue-400 to-purple-500 rounded-xl mx-auto mb-6 group-hover:scale-110 transition-transform"></div>
-            <h3 className="text-xl font-semibold text-white mb-4">Conectar Wallet</h3>
-            <p className="text-gray-300 text-base leading-relaxed">
-              Integración perfecta con MetaMask para acceder a todas las funcionalidades de la dApp de forma segura.
-            </p>
-          </div>
-
-          <div className="glass rounded-xl p-8 text-center hover:scale-105 transition-all duration-300 group">
-            <div className="w-16 h-16 bg-gradient-to-r from-purple-400 to-pink-500 rounded-xl mx-auto mb-6 group-hover:scale-110 transition-transform"></div>
-            <h3 className="text-xl font-semibold text-white mb-4">Dashboard Avanzado</h3>
-            <p className="text-gray-300 text-base leading-relaxed">
-              Interfaz intuitiva para interactuar con contratos inteligentes y gestionar tus datos blockchain.
-            </p>
-          </div>
-
-          <div className="glass rounded-xl p-8 text-center hover:scale-105 transition-all duration-300 group">
-            <div className="w-16 h-16 bg-gradient-to-r from-pink-400 to-red-500 rounded-xl mx-auto mb-6 group-hover:scale-110 transition-transform"></div>
-            <h3 className="text-xl font-semibold text-white mb-4">Historial Completo</h3>
-            <p className="text-gray-300 text-base leading-relaxed">
-              Visualiza todas las transacciones y operaciones registradas en la blockchain de forma transparente.
-            </p>
-          </div>
-        </div>
-      </div>
+      </section>
 
       {/* How it Works Section */}
-      <div className="max-w-4xl mx-auto px-6 py-16">
-        <div className="glass rounded-2xl p-8 md:p-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">¿Cómo Funciona?</h2>
+      <section className="px-6 py-16 bg-slate-900/50">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl md:text-4xl font-bold text-white mb-4">
+              ¿Cómo Funciona?
+            </h2>
+            <p className="text-gray-300 text-lg">
+              Proceso simple en 3 pasos
+            </p>
+          </div>
+          
           <div className="space-y-8">
-            <div className="flex items-start space-x-6">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-pink-400 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0 text-lg">
-                1
+            <div className="flex items-center space-x-6 p-6 glass rounded-2xl">
+              <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-lg">1</span>
               </div>
               <div>
-                <h4 className="text-xl font-semibold text-white mb-3">Gestión de Datos</h4>
-                <p className="text-gray-300 text-base leading-relaxed">
-                  Almacena y recupera información directamente en la blockchain usando contratos inteligentes seguros y verificables.
-                </p>
+                <h3 className="text-xl font-bold text-white mb-2">Conecta tu Wallet</h3>
+                <p className="text-gray-300">Conecta tu wallet de Ethereum (MetaMask) para interactuar con la blockchain</p>
               </div>
             </div>
             
-            <div className="flex items-start space-x-6">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-400 to-purple-400 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0 text-lg">
-                2
+            <div className="flex items-center space-x-6 p-6 glass rounded-2xl">
+              <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-lg">2</span>
               </div>
               <div>
-                <h4 className="text-xl font-semibold text-white mb-3">Transacciones Seguras</h4>
-                <p className="text-gray-300 text-base leading-relaxed">
-                  Crea y registra transacciones personalizadas con total transparencia e inmutabilidad en la red Ethereum.
-                </p>
+                <h3 className="text-xl font-bold text-white mb-2">Envía tu Mensaje</h3>
+                <p className="text-gray-300">Escribe tu mensaje y envíalo al smart contract en la blockchain</p>
               </div>
             </div>
             
-            <div className="flex items-start space-x-6">
-              <div className="w-12 h-12 bg-gradient-to-r from-pink-400 to-red-400 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0 text-lg">
-                3
+            <div className="flex items-center space-x-6 p-6 glass rounded-2xl">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-lg">3</span>
               </div>
               <div>
-                <h4 className="text-xl font-semibold text-white mb-3">Ejecución de Acciones</h4>
-                <p className="text-gray-300 text-base leading-relaxed">
-                  Interactúa con funciones avanzadas del contrato de manera segura y eficiente usando tu wallet conectada.
-                </p>
+                <h3 className="text-xl font-bold text-white mb-2">Visualiza y Gestiona</h3>
+                <p className="text-gray-300">Ve tus datos almacenados y el historial de transacciones en el dashboard</p>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Tech Stack */}
-      <div className="max-w-4xl mx-auto px-6 py-16">
-        <div className="text-center">
-          <h3 className="text-2xl md:text-3xl font-bold text-white mb-8">Tecnologías de Vanguardia</h3>
-          <div className="flex flex-wrap justify-center items-center gap-6">
-            {[
-              { name: 'React', color: 'from-blue-400 to-cyan-400' },
-              { name: 'Hardhat', color: 'from-yellow-400 to-orange-400' },
-              { name: 'MetaMask', color: 'from-orange-400 to-red-400' },
-              { name: 'Ethereum', color: 'from-purple-400 to-indigo-400' },
-              { name: 'Tailwind', color: 'from-cyan-400 to-blue-400' }
-            ].map((tech) => (
-              <div key={tech.name} className="glass rounded-xl px-6 py-4 hover:scale-105 transition-all duration-300">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-12 h-12 bg-gradient-to-r ${tech.color} rounded-xl`}></div>
-                  <span className="text-white font-medium text-lg">{tech.name}</span>
-                </div>
-              </div>
-            ))}
+      {/* Tech Stack Section */}
+      <section className="px-6 py-16">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-2xl md:text-4xl font-bold text-white mb-4">
+            Stack Tecnológico
+          </h2>
+          <p className="text-gray-300 text-lg mb-12">
+            Construido con las mejores tecnologías web3
+          </p>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="glass rounded-2xl p-6 transform hover:scale-105 transition-all duration-300">
+              <div className="text-3xl mb-3">⚛️</div>
+              <h3 className="text-white font-bold">React</h3>
+              <p className="text-gray-400 text-sm mt-2">Frontend Framework</p>
+            </div>
+            
+            <div className="glass rounded-2xl p-6 transform hover:scale-105 transition-all duration-300">
+              <div className="text-3xl mb-3">⚡</div>
+              <h3 className="text-white font-bold">Ethereum</h3>
+              <p className="text-gray-400 text-sm mt-2">Blockchain</p>
+            </div>
+            
+            <div className="glass rounded-2xl p-6 transform hover:scale-105 transition-all duration-300">
+              <div className="text-3xl mb-3">🔗</div>
+              <h3 className="text-white font-bold">Solidity</h3>
+              <p className="text-gray-400 text-sm mt-2">Smart Contracts</p>
+            </div>
+            
+            <div className="glass rounded-2xl p-6 transform hover:scale-105 transition-all duration-300">
+              <div className="text-3xl mb-3">🎨</div>
+              <h3 className="text-white font-bold">Tailwind</h3>
+              <p className="text-gray-400 text-sm mt-2">Styling</p>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
-  )
+  );
 }
-
-export default Home

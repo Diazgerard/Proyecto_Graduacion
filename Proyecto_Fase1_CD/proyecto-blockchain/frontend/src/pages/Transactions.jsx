@@ -1,185 +1,204 @@
-import { useState, useEffect } from 'react'
-import { useBlockchain } from '../context/BlockchainContext'
-import TransactionCard from '../components/TransactionCard'
+import { useState, useEffect } from "react";
+import { useBlockchain } from "../context/BlockchainContext";
+import TransactionCard from "../components/TransactionCard";
 
-const Transactions = () => {
-  const { account, getAllTransactions, isLoading } = useBlockchain()
-  const [transactions, setTransactions] = useState([])
-  const [filter, setFilter] = useState('all')
-  const [searchTerm, setSearchTerm] = useState('')
+export default function Transactions() {
+  const { 
+    contract, 
+    isConnected, 
+    transactions, 
+    allMessages, 
+    provider,
+    isLoading, 
+    refreshData 
+  } = useBlockchain();
+  
+  const [enhancedTransactions, setEnhancedTransactions] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    successful: 0,
+    failed: 0,
+    totalGasUsed: 0
+  });
 
   useEffect(() => {
-    if (account) {
-      loadTransactions()
+    if (isConnected && transactions.length > 0 && contract && provider) {
+      enhanceTransactionsWithDetails();
     }
-  }, [account])
+  }, [transactions, isConnected, contract, provider]);
 
-  const loadTransactions = async () => {
-    const txs = await getAllTransactions()
-    if (txs) {
-      setTransactions(txs)
-    }
-  }
-
-  const filteredTransactions = transactions.filter(tx => {
-    const matchesSearch = 
-      tx.to.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.from.toLowerCase().includes(searchTerm.toLowerCase())
+  const enhanceTransactionsWithDetails = async () => {
+    if (!contract || !provider || transactions.length === 0) return;
     
-    if (filter === 'sent') {
-      return tx.from.toLowerCase() === account?.toLowerCase() && matchesSearch
-    } else if (filter === 'received') {
-      return tx.to.toLowerCase() === account?.toLowerCase() && matchesSearch
+    try {
+      console.log(`🔍 Mejorando ${transactions.length} transacciones con detalles completos...`);
+      
+      // Obtener detalles completos de cada transacción
+      const enhancedDetails = await Promise.all(
+        transactions.map(async (tx) => {
+          try {
+            const [txDetails, receipt, currentBlockNumber] = await Promise.all([
+              provider.getTransaction(tx.transactionHash),
+              provider.getTransactionReceipt(tx.transactionHash),
+              provider.getBlockNumber()
+            ]);
+            
+            const contractAddress = await contract.getAddress();
+            
+            return {
+              // Datos básicos del contexto
+              hash: tx.transactionHash,
+              from: tx.from,
+              to: contractAddress,
+              data: tx.message,
+              timestamp: tx.timestamp,
+              blockNumber: tx.blockNumber,
+              
+              // Detalles de la transacción
+              value: txDetails.value,
+              gasPrice: txDetails.gasPrice,
+              gasLimit: txDetails.gasLimit,
+              gasUsed: receipt.gasUsed,
+              status: receipt.status === 1 ? 'success' : 'failed',
+              blockHash: receipt.blockHash,
+              nonce: txDetails.nonce,
+              transactionIndex: receipt.transactionIndex,
+              confirmations: currentBlockNumber - tx.blockNumber + 1,
+              type: txDetails.type || 0,
+              
+              // Cálculos adicionales
+              gasEfficiency: (Number(receipt.gasUsed) / Number(txDetails.gasLimit)) * 100,
+              gasCost: Number(txDetails.gasPrice) * Number(receipt.gasUsed)
+            };
+          } catch (error) {
+            console.error(`❌ Error mejorando transacción ${tx.transactionHash}:`, error);
+            // Retornar datos básicos si falla la mejora
+            return {
+              hash: tx.transactionHash,
+              from: tx.from,
+              to: 'N/A',
+              data: tx.message,
+              timestamp: tx.timestamp,
+              blockNumber: tx.blockNumber,
+              status: 'success', // Asumimos éxito si está en los eventos
+              gasUsed: 0,
+              gasPrice: 0,
+              value: 0
+            };
+          }
+        })
+      );
+      
+      setEnhancedTransactions(enhancedDetails);
+      
+      // Calcular estadísticas
+      const successful = enhancedDetails.filter(tx => tx.status === 'success').length;
+      const failed = enhancedDetails.filter(tx => tx.status === 'failed').length;
+      const totalGasUsed = enhancedDetails.reduce((sum, tx) => sum + Number(tx.gasUsed || 0), 0);
+      
+      setStats({
+        total: enhancedDetails.length,
+        successful,
+        failed,
+        totalGasUsed
+      });
+      
+      console.log(`✅ ${enhancedDetails.length} transacciones mejoradas correctamente`);
+      
+    } catch (error) {
+      console.error("❌ Error mejorando transacciones:", error);
     }
-    
-    return matchesSearch
-  })
+  };
 
-  if (!account) {
+  if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6">
-        <div className="glass rounded-3xl p-12 text-center max-w-md mx-auto">
-          <h2 className="text-2xl font-bold text-white mb-4">
-            Wallet Requerida
-          </h2>
-          <p className="text-gray-300 mb-6">
-            Conecta tu wallet MetaMask para ver el historial de transacciones.
-          </p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-20">
+            <h1 className="text-4xl font-bold text-white mb-4">Transacciones</h1>
+            <p className="text-gray-300 text-lg">Conecta tu wallet para ver todas las transacciones</p>
+          </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="min-h-screen px-6 py-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            Historial de Transacciones
-          </h1>
-          <p className="text-gray-300 text-lg">
-            Explora todas las transacciones registradas en la blockchain
-          </p>
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-white mb-2">Transacciones</h1>
+          <p className="text-gray-300">Historial completo de transacciones del contrato</p>
         </div>
 
         {/* Stats */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <div className="glass rounded-2xl p-6 text-center">
-            <p className="text-2xl font-bold text-white mb-1">{transactions.length}</p>
-            <p className="text-gray-300 text-sm">Total</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Total</h3>
+            <p className="text-3xl font-bold text-white mt-2">{stats.total}</p>
           </div>
-
-          <div className="glass rounded-2xl p-6 text-center">
-            <p className="text-2xl font-bold text-white mb-1">
-              {transactions.filter(tx => tx.from.toLowerCase() === account?.toLowerCase()).length}
-            </p>
-            <p className="text-gray-300 text-sm">Enviadas</p>
+          
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Exitosas</h3>
+            <p className="text-3xl font-bold text-green-400 mt-2">{stats.successful}</p>
           </div>
-
-          <div className="glass rounded-2xl p-6 text-center">
-            <p className="text-2xl font-bold text-white mb-1">
-              {transactions.filter(tx => tx.to.toLowerCase() === account?.toLowerCase()).length}
-            </p>
-            <p className="text-gray-300 text-sm">Recibidas</p>
+          
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Fallidas</h3>
+            <p className="text-3xl font-bold text-red-400 mt-2">{stats.failed}</p>
           </div>
-
-          <div className="glass rounded-2xl p-6 text-center">
-            <p className="text-2xl font-bold text-white mb-1">
-              {transactions.reduce((sum, tx) => sum + parseFloat(tx.amount || '0'), 0).toFixed(2)}
-            </p>
-            <p className="text-gray-300 text-sm">Total ETH</p>
-          </div>
-        </div>
-
-        {/* Filters and Search */}
-        <div className="glass rounded-2xl p-6 mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <input
-                type="text"
-                placeholder="Buscar por dirección o mensaje..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Filter Buttons */}
-            <div className="flex space-x-2">
-              {[
-                { key: 'all', label: 'Todas', icon: '📋' },
-                { key: 'sent', label: 'Enviadas', icon: '📤' },
-                { key: 'received', label: 'Recibidas', icon: '📥' }
-              ].map((filterOption) => (
-                <button
-                  key={filterOption.key}
-                  onClick={() => setFilter(filterOption.key)}
-                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 flex items-center space-x-2 ${
-                    filter === filterOption.key
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                      : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  <span>{filterOption.icon}</span>
-                  <span>{filterOption.label}</span>
-                </button>
-              ))}
-            </div>
+          
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-medium text-gray-300 uppercase tracking-wide">Gas Total</h3>
+            <p className="text-2xl font-bold text-blue-400 mt-2">{stats.totalGasUsed.toLocaleString()}</p>
           </div>
         </div>
 
         {/* Transactions List */}
-        <div className="space-y-4">
-          {isLoading ? (
-            <div className="flex justify-center py-12">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
-                <span className="text-white text-lg">Cargando transacciones...</span>
-              </div>
+        <div className="glass rounded-2xl p-8">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-white">Historial de Transacciones</h2>
+            <button
+              onClick={refreshData}
+              disabled={isLoading}
+              className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 text-sm"
+            >
+              {isLoading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Actualizando...</span>
+                </div>
+              ) : (
+                'Actualizar'
+              )}
+            </button>
+          </div>
+
+          {isLoading && enhancedTransactions.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-400">Cargando transacciones...</p>
             </div>
-          ) : filteredTransactions.length > 0 ? (
-            <div className="grid gap-6">
-              {filteredTransactions.map((transaction, index) => (
-                <TransactionCard 
-                  key={index} 
-                  transaction={transaction} 
-                  currentAccount={account}
-                />
-              ))}
+          ) : enhancedTransactions.length === 0 && transactions.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-400 text-lg">No hay transacciones registradas aún.</p>
+              <p className="text-gray-500 text-sm mt-2">Las transacciones aparecerán aquí cuando interactúes con el contrato</p>
+            </div>
+          ) : enhancedTransactions.length === 0 && transactions.length > 0 ? (
+            <div className="text-center py-12">
+              <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-400">Procesando detalles de transacciones...</p>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <div className="glass rounded-3xl p-12 max-w-md mx-auto">
-                <h3 className="text-xl font-bold text-white mb-2">
-                  {searchTerm ? 'Sin resultados' : 'No hay transacciones'}
-                </h3>
-                <p className="text-gray-300">
-                  {searchTerm 
-                    ? 'No se encontraron transacciones que coincidan con tu búsqueda.'
-                    : 'Aún no hay transacciones registradas. ¡Crea tu primera transacción desde el Dashboard!'
-                  }
-                </p>
-              </div>
+            <div className="space-y-4">
+              {enhancedTransactions.map((transaction, index) => (
+                <TransactionCard key={transaction.hash} transaction={transaction} index={index} />
+              ))}
             </div>
           )}
         </div>
-
-        {/* Refresh Button */}
-        <div className="text-center mt-12">
-          <button
-            onClick={loadTransactions}
-            disabled={isLoading}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105"
-          >
-            <span>{isLoading ? 'Actualizando...' : 'Actualizar Lista'}</span>
-          </button>
-        </div>
       </div>
     </div>
-  )
+  );
 }
-
-export default Transactions
