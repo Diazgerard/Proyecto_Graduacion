@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Entornos virtuales
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archivos temporales
+*.tmp
+*.bak
+*.log
+
+# Machine Learning - Modelos entrenados
+models/improved_models/*.pkl
+models/models_v1_baseline/*.pkl
+models/catboost_info/
+*.h5
+*.model
+*.joblib
+
+# Machine Learning - Datos y predicciones
+data/*.csv
+data/*.json
+predictions/*.csv
+predictions/*.json
+predictions/*.txt
+
+# Machine Learning - Archivos grandes
+*.pkl
+*.pth
+*.ckpt
+
+# Excepciones (archivos que SÍ queremos versionar)
+!models/.gitkeep
+!data/.gitkeep
+!predictions/.gitkeep
+!features/__init__.py
+!utils/__init__.py

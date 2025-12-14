@@ -1,0 +1,2 @@
+# Este archivo mantiene la carpeta en git
+# Los modelos entrenados (.pkl) no se versionan por ser muy grandes
